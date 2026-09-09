@@ -24,6 +24,20 @@ import {
 } from "../utils/mediaUploadQueue";
 import { generateBlogBanner, generatePixelAvatar } from "../utils/pixelAvatar";
 
+function escapeExportHtml(value) {
+    return String(value || "").replace(
+        /[&<>"']/g,
+        (character) =>
+            ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#039;",
+            })[character],
+    );
+}
+
 function AvatarImg({ src, name, size = 32 }) {
     const [failed, setFailed] = useState(false);
     const initial = (name || "?")[0].toUpperCase();
@@ -789,6 +803,7 @@ export default function WritePage({ slugid }) {
     const { isDark, toggleTheme } = useTheme();
     const { activeTheme } = useSeasonalTheme();
     const editorRef = useRef(null);
+    const publishMenuRef = useRef(null);
     const autoSaveTimer = useRef(null);
     const [mode, setMode] = useState("edit");
     const [title, setTitle] = useState("");
@@ -925,6 +940,26 @@ export default function WritePage({ slugid }) {
         () => () => clearTimeout(clipboardToastTimerRef.current),
         [],
     );
+
+    useEffect(() => {
+        if (!showPublishMenu) return;
+
+        const dismissOnEscape = (event) => {
+            if (event.key === "Escape") setShowPublishMenu(false);
+        };
+        const dismissOnOutsideClick = (event) => {
+            if (!publishMenuRef.current?.contains(event.target)) {
+                setShowPublishMenu(false);
+            }
+        };
+
+        document.addEventListener("keydown", dismissOnEscape);
+        document.addEventListener("pointerdown", dismissOnOutsideClick);
+        return () => {
+            document.removeEventListener("keydown", dismissOnEscape);
+            document.removeEventListener("pointerdown", dismissOnOutsideClick);
+        };
+    }, [showPublishMenu]);
 
     useEffect(() => {
         pendingSlugRef.current = slug;
@@ -2091,6 +2126,114 @@ export default function WritePage({ slugid }) {
         }
     };
 
+    const getExportMarkdown = useCallback(async () => {
+        const body =
+            (await editorRef.current?.getMarkdown?.()) || markdown || "";
+        const heading = title.trim() ? `# ${title.trim()}` : "";
+        const punchline = subtitle.trim()
+            ? `> ${subtitle.trim().replace(/\n/g, "\n> ")}`
+            : "";
+        return [heading, punchline, body.trim()].filter(Boolean).join("\n\n");
+    }, [markdown, subtitle, title]);
+
+    const handleCopyMarkdown = useCallback(async () => {
+        setShowPublishMenu(false);
+        try {
+            await navigator.clipboard.writeText(await getExportMarkdown());
+            showClipboardToast("Blog copied as Markdown");
+        } catch {
+            showClipboardToast("Could not copy the blog", "error");
+        }
+    }, [getExportMarkdown, showClipboardToast]);
+
+    const handleDownloadPdf = useCallback(async () => {
+        setShowPublishMenu(false);
+        const printWindow = window.open("", "_blank", "width=960,height=720");
+        if (!printWindow) {
+            showClipboardToast("Allow pop-ups to download a PDF", "error");
+            return;
+        }
+
+        printWindow.document.write(
+            "<!doctype html><title>Preparing PDF…</title><p style=\"font:16px system-ui;padding:32px\">Preparing your blog…</p>",
+        );
+
+        try {
+            const articleHtml =
+                (await editorRef.current?.getHTML?.()) || previewHtml || "";
+            const safeTitle = escapeExportHtml(title || "Untitled blog");
+            const safeSubtitle = escapeExportHtml(subtitle);
+            const safeTags = tags.map((tag) => escapeExportHtml(tag));
+            const printableCover = /^(https?:|data:image\/|blob:|\/)/i.test(
+                coverPreview || "",
+            )
+                ? escapeExportHtml(coverPreview)
+                : "";
+
+            printWindow.document.open();
+            printWindow.document.write(`<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>${safeTitle}</title>
+    <style>
+        @page { size: A4; margin: 18mm; }
+        * { box-sizing: border-box; }
+        body { margin: 0 auto; max-width: 760px; color: #171717; font: 16px/1.7 Georgia, serif; }
+        h1 { margin: 0 0 8px; font-size: 34px; line-height: 1.15; }
+        h2, h3, h4 { break-after: avoid; line-height: 1.25; }
+        .subtitle { margin: 0 0 22px; color: #555; font-size: 18px; }
+        .cover { width: 100%; max-height: 360px; margin: 0 0 24px; border-radius: 12px; object-fit: cover; }
+        .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 22px; color: #555; font: 12px/1.4 system-ui, sans-serif; }
+        .tag { padding: 4px 8px; border: 1px solid #ddd; border-radius: 999px; }
+        img, svg { max-width: 100%; height: auto; }
+        pre { overflow-wrap: anywhere; white-space: pre-wrap; padding: 14px; border: 1px solid #ddd; border-radius: 8px; background: #f6f6f6; font: 12px/1.5 ui-monospace, monospace; }
+        code { font-family: ui-monospace, monospace; }
+        blockquote { margin-left: 0; padding-left: 16px; border-left: 3px solid #aaa; color: #555; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 7px; border: 1px solid #ccc; text-align: left; }
+        a { color: inherit; text-decoration: underline; }
+        [contenteditable] { outline: none; }
+        button, [data-floating-ui-portal] { display: none !important; }
+    </style>
+</head>
+<body>
+    ${printableCover ? `<img class="cover" src="${printableCover}" alt="" />` : ""}
+    <h1>${safeTitle}</h1>
+    ${safeSubtitle ? `<p class="subtitle">${safeSubtitle}</p>` : ""}
+    ${safeTags.length ? `<div class="tags">${safeTags.map((tag) => `<span class="tag">#${tag}</span>`).join("")}</div>` : ""}
+    <article>${articleHtml}</article>
+</body>
+</html>`);
+            printWindow.document.close();
+
+            const images = Array.from(printWindow.document.images);
+            await Promise.all(
+                images.map(
+                    (image) =>
+                        image.complete ||
+                        new Promise((resolve) => {
+                            image.addEventListener("load", resolve, {
+                                once: true,
+                            });
+                            image.addEventListener("error", resolve, {
+                                once: true,
+                            });
+                        }),
+                ),
+            );
+            await printWindow.document.fonts?.ready;
+            printWindow.focus();
+            printWindow.onafterprint = () => printWindow.close();
+            printWindow.print();
+            showClipboardToast("PDF print dialog opened");
+        } catch {
+            printWindow.close();
+            showClipboardToast("Could not prepare the PDF", "error");
+        }
+    }, [coverPreview, previewHtml, showClipboardToast, subtitle, tags, title]);
+
     // Handle .md file upload — check for existing content first
     const handleMdUpload = useCallback((e) => {
         const file = e.target.files?.[0];
@@ -2930,7 +3073,10 @@ export default function WritePage({ slugid }) {
                     />
 
                     {/* Publish / Update split button */}
-                    <div className="relative group/publish">
+                    <div
+                        ref={publishMenuRef}
+                        className="relative group/publish"
+                    >
                         {(() => {
                             const titleWords = title
                                 .trim()
@@ -2985,14 +3131,15 @@ export default function WritePage({ slugid }) {
                                             {isPublished ? "Update" : "Publish"}
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() =>
-                                                canPublish &&
                                                 setShowPublishMenu(
                                                     !showPublishMenu,
                                                 )
                                             }
-                                            disabled={!canPublish}
-                                            className="px-2.5 py-1.5 text-white transition-colors border-l border-white/15 disabled:cursor-not-allowed flex items-center justify-center hover:bg-black/10 active:bg-black/20"
+                                            className="px-2.5 py-1.5 text-white transition-colors border-l border-white/15 flex items-center justify-center hover:bg-black/10 active:bg-black/20"
+                                            aria-label="Publishing and export options"
+                                            aria-expanded={showPublishMenu}
                                         >
                                             <svg
                                                 width="10"
@@ -3010,7 +3157,7 @@ export default function WritePage({ slugid }) {
                                     </div>
 
                                     {/* Title hint when publish is disabled */}
-                                    {!canPublish && (
+                                    {!canPublish && !showPublishMenu && (
                                         <div
                                             className="absolute right-0 top-full mt-2 whitespace-nowrap px-3 py-1.5 rounded-lg text-[11px] font-medium z-50 opacity-0 group-hover/publish:opacity-100 transition-opacity pointer-events-none"
                                             style={{
@@ -3026,14 +3173,7 @@ export default function WritePage({ slugid }) {
                                         </div>
                                     )}
 
-                                    {showPublishMenu && canPublish && (
-                                        <>
-                                            <div
-                                                className="fixed inset-0 z-40"
-                                                onClick={() =>
-                                                    setShowPublishMenu(false)
-                                                }
-                                            />
+                                    {showPublishMenu && (
                                             <div
                                                 className="absolute right-0 top-full mt-2 w-48 rounded-xl shadow-2xl z-50 overflow-hidden py-1"
                                                 style={{
@@ -3066,10 +3206,47 @@ export default function WritePage({ slugid }) {
                                                         ? "Syncing draft…"
                                                         : "Save Draft"}
                                                 </button>
+                                                <div className="my-1 border-t border-[var(--dropdown-border)]" />
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCopyMarkdown}
+                                                    className="w-full px-4 py-2.5 text-left text-[13px] hover:bg-[var(--bg-hover)] flex items-center gap-2.5 transition-colors"
+                                                    style={{
+                                                        color: "var(--text-secondary)",
+                                                    }}
+                                                >
+                                                    <ion-icon
+                                                        name="copy-outline"
+                                                        style={{
+                                                            fontSize: "15px",
+                                                            color: "var(--text-faint)",
+                                                        }}
+                                                    />
+                                                    Copy as Markdown
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleDownloadPdf}
+                                                    className="w-full px-4 py-2.5 text-left text-[13px] hover:bg-[var(--bg-hover)] flex items-center gap-2.5 transition-colors"
+                                                    style={{
+                                                        color: "var(--text-secondary)",
+                                                    }}
+                                                >
+                                                    <ion-icon
+                                                        name="document-outline"
+                                                        style={{
+                                                            fontSize: "15px",
+                                                            color: "var(--text-faint)",
+                                                        }}
+                                                    />
+                                                    Download as PDF
+                                                </button>
+                                                <div className="my-1 border-t border-[var(--dropdown-border)]" />
                                                 {isPublished ? (
                                                     <button
+                                                        disabled={!canPublish}
                                                         onClick={handlePublish}
-                                                        className="w-full px-4 py-2.5 text-left text-[13px] hover:bg-[var(--bg-hover)] flex items-center gap-2.5 transition-colors"
+                                                        className="w-full px-4 py-2.5 text-left text-[13px] hover:bg-[var(--bg-hover)] flex items-center gap-2.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                                                         style={{
                                                             color: "var(--text-secondary)",
                                                         }}
@@ -3087,10 +3264,11 @@ export default function WritePage({ slugid }) {
                                                 ) : (
                                                     <>
                                                         <button
+                                                            disabled={!canPublish}
                                                             onClick={
                                                                 handlePublish
                                                             }
-                                                            className="w-full px-4 py-2.5 text-left text-[13px] hover:bg-[var(--bg-hover)] flex items-center gap-2.5 transition-colors"
+                                                            className="w-full px-4 py-2.5 text-left text-[13px] hover:bg-[var(--bg-hover)] flex items-center gap-2.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                                                             style={{
                                                                 color: "var(--text-secondary)",
                                                             }}
@@ -3106,10 +3284,11 @@ export default function WritePage({ slugid }) {
                                                             Publish
                                                         </button>
                                                         <button
+                                                            disabled={!canPublish}
                                                             onClick={
                                                                 handlePublishBeta
                                                             }
-                                                            className="w-full px-4 py-2.5 text-left text-[13px] hover:bg-[var(--bg-hover)] flex items-center gap-2.5 transition-colors"
+                                                            className="w-full px-4 py-2.5 text-left text-[13px] hover:bg-[var(--bg-hover)] flex items-center gap-2.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                                                             style={{
                                                                 color: "var(--text-muted)",
                                                             }}
@@ -3127,7 +3306,6 @@ export default function WritePage({ slugid }) {
                                                     </>
                                                 )}
                                             </div>
-                                        </>
                                     )}
                                 </>
                             );
