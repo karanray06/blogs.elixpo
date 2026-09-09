@@ -1385,10 +1385,39 @@ const BlogEditor = forwardRef(function BlogEditor(
             if (!editable || !SPECIAL_BLOCK_LABELS[block?.type]) return;
             event.preventDefault();
             event.stopPropagation();
+            const handle = event.target.closest?.(
+                'button[draggable="true"]',
+            );
+            const anchor = handle?.getBoundingClientRect();
+            const menuWidth = 210;
+            const menuGap = 10;
+            const viewportPadding = 8;
+            const preferredLeft =
+                (anchor?.left ?? event.clientX) - menuWidth - menuGap;
+            const fallbackRight = (anchor?.right ?? event.clientX) + menuGap;
             setPageMenu(null);
             setBlockMenu({
-                x: Math.min(event.clientX, window.innerWidth - 230),
-                y: Math.min(event.clientY, window.innerHeight - 170),
+                // Keep block actions outside the content block, beside the
+                // drag controls. Fall back to the right only on narrow screens.
+                x:
+                    preferredLeft >= viewportPadding
+                        ? preferredLeft
+                        : Math.max(
+                              viewportPadding,
+                              Math.min(
+                                  fallbackRight,
+                                  window.innerWidth -
+                                      menuWidth -
+                                      viewportPadding,
+                              ),
+                          ),
+                y: Math.max(
+                    viewportPadding,
+                    Math.min(
+                        anchor?.top ?? event.clientY,
+                        window.innerHeight - 170,
+                    ),
+                ),
                 blockId: block.id,
                 blockType: block.type,
             });
