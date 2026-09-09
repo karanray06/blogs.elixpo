@@ -5562,6 +5562,12 @@ export default function WritePage({ slugid }) {
                             />
                             <span className="text-[13px] text-[var(--text-primary)] font-medium">
                                 {mediaStorageToast}
+                            </span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </ViewportPortal>
+
             <ViewportPortal>
                 <AnimatePresence>
                     {clipboardToast && (
