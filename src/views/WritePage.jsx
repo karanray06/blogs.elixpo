@@ -869,6 +869,8 @@ export default function WritePage({ slugid }) {
 
     const [syncStatus, setSyncStatus] = useState("idle"); // idle | local | syncing | synced
     const [showSavedToast, setShowSavedToast] = useState(false);
+    const [clipboardToast, setClipboardToast] = useState(null);
+    const clipboardToastTimerRef = useRef(null);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showCollabPanel, setShowCollabPanel] = useState(false);
     const [showColorPanel, setShowColorPanel] = useState(false);
@@ -908,6 +910,20 @@ export default function WritePage({ slugid }) {
     const mdUploadRef = useRef(null);
 
     const username = user?.username || "you";
+
+    const showClipboardToast = useCallback((message, type = "success") => {
+        clearTimeout(clipboardToastTimerRef.current);
+        setClipboardToast({ message, type });
+        clipboardToastTimerRef.current = setTimeout(
+            () => setClipboardToast(null),
+            2600,
+        );
+    }, []);
+
+    useEffect(
+        () => () => clearTimeout(clipboardToastTimerRef.current),
+        [],
+    );
 
     useEffect(() => {
         pendingSlugRef.current = slug;
@@ -3178,8 +3194,16 @@ export default function WritePage({ slugid }) {
                             const url = `${window.location.origin}/${username}/${slug || slugid}`;
                             navigator.clipboard.writeText(url).catch(() => {});
                         }}
-                        onCopyBlogId={() => {
-                            navigator.clipboard.writeText(blogId).catch(() => {});
+                        onCopyBlogId={async () => {
+                            try {
+                                await navigator.clipboard.writeText(blogId);
+                                showClipboardToast("Blog ID copied");
+                            } catch {
+                                showClipboardToast(
+                                    "Could not copy the Blog ID",
+                                    "error",
+                                );
+                            }
                         }}
                         onChangeCover={() => setShowCoverModal(true)}
                         onChangeTitle={() =>
@@ -5507,6 +5531,44 @@ export default function WritePage({ slugid }) {
                             </svg>
                             <span className="text-[13px] text-green-300 font-medium">
                                 Saved to cloud
+                            </span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </ViewportPortal>
+
+            <ViewportPortal>
+                <AnimatePresence>
+                    {clipboardToast && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 16 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 8 }}
+                            className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2.5 rounded-xl border bg-[var(--bg-surface)]/90 px-4 py-2.5 shadow-2xl backdrop-blur-lg"
+                            style={{
+                                borderColor:
+                                    clipboardToast.type === "error"
+                                        ? "rgba(248,113,113,0.35)"
+                                        : "rgba(74,222,128,0.25)",
+                            }}
+                            role="status"
+                        >
+                            <ion-icon
+                                name={
+                                    clipboardToast.type === "error"
+                                        ? "alert-circle-outline"
+                                        : "checkmark-circle-outline"
+                                }
+                                style={{
+                                    fontSize: "18px",
+                                    color:
+                                        clipboardToast.type === "error"
+                                            ? "#f87171"
+                                            : "#4ade80",
+                                }}
+                            />
+                            <span className="text-[13px] font-medium text-[var(--text-primary)]">
+                                {clipboardToast.message}
                             </span>
                         </motion.div>
                     )}
