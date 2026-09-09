@@ -13,7 +13,6 @@ import "@blocknote/mantine/style.css";
 import "../styles/editor/editor.css";
 import "../styles/katex-fonts.css";
 import { readTimeFromWords } from "../../lib/readTime";
-import MediaStorageChip from "../components/Editor/MediaStorageChip";
 import { useCollaboration } from "../hooks/useCollaboration";
 import { IMAGE_ACCEPT_ATTR, isAllowedImage } from "../utils/allowedImageTypes";
 import { extractMermaidFences } from "../utils/markdownMermaid";
@@ -869,6 +868,10 @@ export default function WritePage({ slugid }) {
 
     const [syncStatus, setSyncStatus] = useState("idle"); // idle | local | syncing | synced
     const [showSavedToast, setShowSavedToast] = useState(false);
+    const [mediaStorageToast, setMediaStorageToast] = useState("");
+    const mediaStorageToastTimerRef = useRef(null);
+    const [clipboardToast, setClipboardToast] = useState(null);
+    const clipboardToastTimerRef = useRef(null);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showCollabPanel, setShowCollabPanel] = useState(false);
     const [showColorPanel, setShowColorPanel] = useState(false);
@@ -909,6 +912,20 @@ export default function WritePage({ slugid }) {
 
     const username = user?.username || "you";
 
+    const showClipboardToast = useCallback((message, type = "success") => {
+        clearTimeout(clipboardToastTimerRef.current);
+        setClipboardToast({ message, type });
+        clipboardToastTimerRef.current = setTimeout(
+            () => setClipboardToast(null),
+            2600,
+        );
+    }, []);
+
+    useEffect(
+        () => () => clearTimeout(clipboardToastTimerRef.current),
+        [],
+    );
+
     useEffect(() => {
         pendingSlugRef.current = slug;
     }, [slug]);
@@ -930,28 +947,54 @@ export default function WritePage({ slugid }) {
                 usageResponse.json(),
                 cloudinaryResponse.json(),
             ]);
-            setMediaStorageStatus({
+            const nextStatus = {
                 loading: false,
                 tier: usage.tier,
                 ...usage.storage,
                 connected: cloudinary.connected,
                 useForUploads: cloudinary.useForUploads,
                 cloudName: cloudinary.cloudName,
-            });
+            };
+            setMediaStorageStatus(nextStatus);
+            return nextStatus;
         } catch {
-            setMediaStorageStatus({ loading: false, unavailable: true });
+            const unavailable = { loading: false, unavailable: true };
+            setMediaStorageStatus(unavailable);
+            return unavailable;
         }
     }, []);
 
     useEffect(() => {
+        let active = true;
         refreshMediaStorageStatus();
-        const handleUpload = (event) => {
-            if (event.detail?.status === "complete")
-                refreshMediaStorageStatus();
+        const handleUpload = async (event) => {
+            if (event.detail?.status !== "complete") return;
+            const status = await refreshMediaStorageStatus();
+            if (!active) return;
+            const result = event.detail?.result || {};
+            const personal =
+                result.storageProvider === "user_cloudinary" ||
+                (status.connected && status.useForUploads);
+            const destination = personal
+                ? result.storageCloudName || status.cloudName || "personal Cloudinary"
+                : "LixBlogs storage";
+            const remaining =
+                !personal && status.remainingFormatted
+                    ? ` · ${status.remainingFormatted} remaining`
+                    : "";
+            setMediaStorageToast(`Uploaded to ${destination}${remaining}`);
+            clearTimeout(mediaStorageToastTimerRef.current);
+            mediaStorageToastTimerRef.current = setTimeout(
+                () => setMediaStorageToast(""),
+                4200,
+            );
         };
         window.addEventListener(MEDIA_UPLOAD_EVENT, handleUpload);
-        return () =>
+        return () => {
+            active = false;
             window.removeEventListener(MEDIA_UPLOAD_EVENT, handleUpload);
+            clearTimeout(mediaStorageToastTimerRef.current);
+        };
     }, [refreshMediaStorageStatus]);
 
     // Real-time collaboration (enabled when blog has co-authors)
@@ -3178,8 +3221,16 @@ export default function WritePage({ slugid }) {
                             const url = `${window.location.origin}/${username}/${slug || slugid}`;
                             navigator.clipboard.writeText(url).catch(() => {});
                         }}
-                        onCopyBlogId={() => {
-                            navigator.clipboard.writeText(blogId).catch(() => {});
+                        onCopyBlogId={async () => {
+                            try {
+                                await navigator.clipboard.writeText(blogId);
+                                showClipboardToast("Blog ID copied");
+                            } catch {
+                                showClipboardToast(
+                                    "Could not copy the Blog ID",
+                                    "error",
+                                );
+                            }
                         }}
                         onChangeCover={() => setShowCoverModal(true)}
                         onChangeTitle={() =>
@@ -4372,7 +4423,6 @@ export default function WritePage({ slugid }) {
                                                 mediaStorageStatus={
                                                     mediaStorageStatus
                                                 }
-                                                mediaStorageReturnTo={`/edit/${encodeURIComponent(slugid)}`}
                                                 secret={secret}
                                                 collaboration={collabConfig}
                                                 editable={!roomFull}
@@ -4509,23 +4559,6 @@ export default function WritePage({ slugid }) {
                             {readTime} min read
                         </span>
                     </div>
-
-                    {/* Storage belongs with publishing/media configuration, not
-                        between the cover and the article's title hierarchy. */}
-                    {!coverUploading && (
-                        <div>
-                            <label
-                                className="text-[12px] font-medium mb-2 block"
-                                style={{ color: "var(--text-muted)" }}
-                            >
-                                Media storage
-                            </label>
-                            <MediaStorageChip
-                                status={mediaStorageStatus}
-                                returnTo={`/edit/${encodeURIComponent(slugid)}`}
-                            />
-                        </div>
-                    )}
 
                     {/* Owner — locked after publish */}
                     <div>
@@ -5507,6 +5540,60 @@ export default function WritePage({ slugid }) {
                             </svg>
                             <span className="text-[13px] text-green-300 font-medium">
                                 Saved to cloud
+                            </span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </ViewportPortal>
+
+            {/* Upload destination is transient here; full quota details live in Settings → Media. */}
+            <ViewportPortal>
+                <AnimatePresence>
+                    {mediaStorageToast && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-[#9b7bf7]/20 bg-[var(--bg-surface)]/90 backdrop-blur-lg shadow-2xl"
+                        >
+                            <ion-icon
+                                name="cloud-done-outline"
+                                style={{ fontSize: "17px", color: "#9b7bf7" }}
+                            />
+                            <span className="text-[13px] text-[var(--text-primary)] font-medium">
+                                {mediaStorageToast}
+            <ViewportPortal>
+                <AnimatePresence>
+                    {clipboardToast && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 16 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 8 }}
+                            className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2.5 rounded-xl border bg-[var(--bg-surface)]/90 px-4 py-2.5 shadow-2xl backdrop-blur-lg"
+                            style={{
+                                borderColor:
+                                    clipboardToast.type === "error"
+                                        ? "rgba(248,113,113,0.35)"
+                                        : "rgba(74,222,128,0.25)",
+                            }}
+                            role="status"
+                        >
+                            <ion-icon
+                                name={
+                                    clipboardToast.type === "error"
+                                        ? "alert-circle-outline"
+                                        : "checkmark-circle-outline"
+                                }
+                                style={{
+                                    fontSize: "18px",
+                                    color:
+                                        clipboardToast.type === "error"
+                                            ? "#f87171"
+                                            : "#4ade80",
+                                }}
+                            />
+                            <span className="text-[13px] font-medium text-[var(--text-primary)]">
+                                {clipboardToast.message}
                             </span>
                         </motion.div>
                     )}
