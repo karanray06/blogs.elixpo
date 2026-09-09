@@ -53,6 +53,7 @@ import {
 import { getLixShikiHighlighter } from "../../utils/shikiHighlighter";
 import { clearInheritedBlockTextColors } from "../../utils/blockColorNormalization";
 import { parseChecklistShortcut } from "../../utils/checklistShortcut";
+import { getHeadingSection } from "../../utils/headingSections";
 import AICommandMenu from "./AICommandMenu";
 import AISelectionToolbar from "./AISelectionToolbar";
 import { AIBlock } from "./blocks/AIBlock";
@@ -116,14 +117,55 @@ function withoutBlockIds(block) {
 
 function EditorSideMenu({ onBlockContextMenu }) {
     const editor = useBlockNoteEditor();
+    const temporarySectionEndRef = useRef(null);
     const block = useExtensionState(SideMenuExtension, {
         editor,
         selector: (state) => state?.block,
     });
 
+    const prepareSectionDrag = (event) => {
+        if (!event.target.closest?.('button[draggable="true"]')) return;
+        if (block?.type !== "heading") return;
+
+        const section = getHeadingSection(editor.document, block.id);
+        if (section.length <= 1) return;
+        let endBlock = section[section.length - 1];
+
+        try {
+            editor.setSelection(block.id, endBlock.id);
+        } catch {
+            // BlockNote cannot end a range selection on content-less blocks
+            // such as images or diagrams. Add an invisible trailing paragraph
+            // for the duration of the drag so those blocks remain in the range.
+            const [temporaryEnd] = editor.insertBlocks(
+                [{ type: "paragraph", content: [] }],
+                endBlock.id,
+                "after",
+            );
+            if (!temporaryEnd) return;
+            temporarySectionEndRef.current = temporaryEnd.id;
+            editor.setSelection(block.id, temporaryEnd.id);
+        }
+    };
+
+    const finishSectionDrag = () => {
+        const temporaryId = temporarySectionEndRef.current;
+        temporarySectionEndRef.current = null;
+        if (!temporaryId) return;
+        // The drop transaction is synchronous, but cleanup on the next frame
+        // keeps it out of BlockNote's drag-end selection bookkeeping.
+        requestAnimationFrame(() => {
+            try {
+                if (editor.getBlock(temporaryId)) editor.removeBlocks([temporaryId]);
+            } catch {}
+        });
+    };
+
     return (
         <div
             className="blog-editor-side-menu-host"
+            onDragStartCapture={prepareSectionDrag}
+            onDragEnd={finishSectionDrag}
             onContextMenu={(event) => {
                 const dragHandle = event.target.closest?.(
                     '[data-test="dragHandle"], button[draggable="true"]',
