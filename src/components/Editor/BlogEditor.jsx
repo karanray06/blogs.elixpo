@@ -1273,7 +1273,6 @@ const BlogEditor = forwardRef(function BlogEditor(
         onTitleChange,
         blogId,
         mediaStorageStatus,
-        mediaStorageReturnTo,
         collaboration,
         onCollabSeeded,
         editable = true,
@@ -4300,7 +4299,6 @@ const BlogEditor = forwardRef(function BlogEditor(
                 value={{
                     blogId,
                     mediaStorageStatus,
-                    mediaStorageReturnTo,
                 }}
             >
                 <BlockNoteView
