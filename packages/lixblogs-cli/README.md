@@ -37,6 +37,7 @@ lixblogs blog delete <id> --yes
 lixblogs blog list --status trashed
 lixblogs blog restore <id> --yes
 lixblogs blog history <id>
+lixblogs blog history <id> --version <version-id>
 lixblogs blog restore-version <id> --version <version-id> --yes
 ```
 
@@ -106,10 +107,17 @@ lixblogs skill list
 lixblogs skill inspect lixblogs-author
 lixblogs skill install lixblogs-author --target .agents/skills --dry-run
 lixblogs skill install lixblogs-author --target .agents/skills --yes
+lixblogs skill install --all --target .agents/skills --dry-run
+lixblogs skill install --all --target .agents/skills --yes
 ```
 
 Install only the needed skill. Existing files require explicit `--force --yes`.
 Each skill declares its minimum CLI version and scopes.
+
+The skills live inside the npm artifact; a separate agent machine does not
+need this repository. Run the commands from the target workspace and point
+`--target` at that agent runtime's workspace-skill directory. Skill
+installation is offline and does not authenticate an account or grant scopes.
 
 `create`, `edit`, `publish`, `unpublish`, `delete`, and `restore` accept
 `--dry-run`. Content input is mutually exclusive: `--file`, `--stdin`,
