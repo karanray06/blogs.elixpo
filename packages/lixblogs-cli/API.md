@@ -48,6 +48,10 @@ logged by the resource API.
 | `POST` | `/api/v1/media/upload` | `lixblogs:media:write` | Send an image through the canonical storage pipeline |
 | `DELETE` | `/api/v1/media/{id}` | `lixblogs:media:write` | Delete an owned tracked asset from its storage provider |
 
+`GET /api/v1/blogs/{id}/versions` returns retained snapshot summaries. Add
+`?version={versionId}` to retrieve one snapshot's full block content before a
+restore. Restoration remains a conditional write using `If-Match`.
+
 `GET /api/v1/analytics` accepts `scope=personal|org:<id>`, `range=7d|30d|90d|12m|custom`,
 `from`, `to`, `dimension=overview|timeline|posts|sources|devices|countries`, `limit=1..100`,
 and an opaque `cursor`. Organization queries additionally require `lixblogs:organizations:read`
