@@ -160,13 +160,7 @@ function AccountTab({ user, refetchUser }) {
         <h3 className="text-[11px] font-semibold text-[var(--text-faint)] uppercase tracking-widest mb-4">Profile</h3>
         <div className="space-y-4">
           <div className="flex items-center gap-4 p-4 bg-[var(--card-bg)] border border-[var(--border-default)] rounded-xl">
-            {user.avatar_url ? (
-              <img src={user.avatar_url} alt="" className="h-16 w-16 rounded-full object-cover ring-2 ring-[var(--border-default)]" />
-            ) : (
-              <div className="h-16 w-16 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center text-2xl text-[var(--text-muted)] font-bold ring-2 ring-[var(--border-default)]">
-                {(user.display_name || user.username || '?')[0].toUpperCase()}
-              </div>
-            )}
+            <img src={user.avatar_url || generatePixelAvatar(user.username || user.display_name)} alt="" className="h-16 w-16 rounded-full object-cover ring-2 ring-[var(--border-default)]" />
             <div className="min-w-0">
               <p className="text-[15px] text-[var(--text-primary)] font-semibold">{user.display_name || user.username}</p>
               <p className="text-[13px] text-[var(--text-faint)]">@{user.username} &middot; {user.email}</p>

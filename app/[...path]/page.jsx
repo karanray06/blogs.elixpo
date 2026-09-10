@@ -344,7 +344,7 @@ export async function generateMetadata({ params, searchParams }) {
                     : "",
             ]);
             const og = ogUrl({
-                type: "profile",
+                type: "collection",
                 kind: "Collection",
                 title,
                 sub: orgName,
@@ -359,6 +359,7 @@ export async function generateMetadata({ params, searchParams }) {
                         : "")
                 ),
                 seed: data.collection.slug || title,
+                avatarSeed: data.owner?.slug || name,
             });
             return cardMeta({
                 title: `${title}, a collection by ${orgName} on LixBlogs`,

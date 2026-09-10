@@ -21,6 +21,7 @@ import {
     generateBlogBanner,
     generateBlogThumbnail,
     generatePixelAvatar,
+    generateProfileBanner,
 } from "../utils/pixelAvatar";
 import "../styles/editor/editor.css";
 import "../styles/katex-fonts.css";
@@ -1065,25 +1066,11 @@ function HandlePageInner({ path, initialData = null }) {
                                 href={`/${owner.username}`}
                                 className="flex items-center gap-1.5 hover:opacity-70 transition-opacity"
                             >
-                                {owner.avatar_url ? (
-                                    <img
-                                        src={owner.avatar_url}
-                                        alt=""
-                                        className="h-5 w-5 rounded-full object-cover"
-                                    />
-                                ) : (
-                                    <span
-                                        className="h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold"
-                                        style={{
-                                            backgroundColor:
-                                                "var(--bg-elevated)",
-                                        }}
-                                    >
-                                        {(owner.display_name ||
-                                            owner.username ||
-                                            "?")[0].toUpperCase()}
-                                    </span>
-                                )}
+	                            <img
+	                                src={owner.avatar_url || generatePixelAvatar(owner.username || owner.display_name)}
+	                                alt=""
+	                                className="h-5 w-5 rounded-full object-cover"
+	                            />
                                 <span style={{ color: "var(--accent)" }}>
                                     {owner.display_name || owner.username}
                                 </span>
@@ -1453,7 +1440,8 @@ function HandlePageInner({ path, initialData = null }) {
 
         const bannerSrc = u.banner_r2_key
             ? `/api/media/${u.banner_r2_key}?v=${encodeURIComponent(u.updated_at || "")}`
-            : null;
+            : generateProfileBanner(u.username || u.id, u.avatar_url);
+        const avatarSrc = u.avatar_url || generatePixelAvatar(u.username || u.id);
 
         return (
             <AppShell>
@@ -1464,14 +1452,12 @@ function HandlePageInner({ path, initialData = null }) {
                             className="w-full rounded-xl bg-[var(--bg-elevated)] overflow-hidden"
                             style={{ aspectRatio: "4 / 1" }}
                         >
-                            {bannerSrc && (
-                                <img
-                                    src={bannerSrc}
-                                    alt=""
-                                    className="w-full h-full object-cover"
-                                    loading="eager"
-                                />
-                            )}
+	                            <img
+	                                src={bannerSrc}
+	                                alt=""
+	                                className="w-full h-full object-cover"
+	                                loading="eager"
+	                            />
                             {/* Gradient overlay for text contrast on banner */}
                             {bannerSrc && (
                                 <div
@@ -1485,19 +1471,11 @@ function HandlePageInner({ path, initialData = null }) {
                         </div>
                         {/* Avatar overlapping banner bottom */}
                         <div className="absolute -bottom-12 left-5 sm:left-6">
-                            {u.avatar_url ? (
-                                <img
-                                    src={u.avatar_url}
-                                    alt=""
-                                    className="h-[88px] w-[88px] rounded-full border-4 border-[var(--bg-app)] object-cover shadow-lg shadow-black/20"
-                                />
-                            ) : (
-                                <div className="h-[88px] w-[88px] rounded-full border-4 border-[var(--bg-app)] bg-[var(--bg-elevated)] flex items-center justify-center text-3xl text-[var(--text-muted)] font-bold shadow-lg shadow-black/20">
-                                    {(u.display_name ||
-                                        u.username ||
-                                        "?")[0].toUpperCase()}
-                                </div>
-                            )}
+	                            <img
+	                                src={avatarSrc}
+	                                alt=""
+	                                className="h-[88px] w-[88px] rounded-full border-4 border-[var(--bg-app)] object-cover shadow-lg shadow-black/20"
+	                            />
                         </div>
                     </div>
 
@@ -1941,19 +1919,11 @@ function HandlePageInner({ path, initialData = null }) {
                                 href={`/${owner.username}`}
                                 className="flex items-center gap-3.5 p-3.5 bg-[var(--card-bg)] border border-[var(--border-default)] rounded-xl hover:border-[var(--border-default)] transition-colors group"
                             >
-                                {owner.avatar_url ? (
-                                    <img
-                                        src={owner.avatar_url}
-                                        alt=""
-                                        className="h-11 w-11 rounded-full object-cover ring-2 ring-[#9b7bf7]/30"
-                                    />
-                                ) : (
-                                    <div className="h-11 w-11 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center text-lg text-[var(--text-muted)] font-bold ring-2 ring-[#9b7bf7]/30">
-                                        {(owner.display_name ||
-                                            owner.username ||
-                                            "?")[0].toUpperCase()}
-                                    </div>
-                                )}
+	                            <img
+	                                src={owner.avatar_url || generatePixelAvatar(owner.username || owner.display_name)}
+	                                alt=""
+	                                className="h-11 w-11 rounded-full object-cover ring-2 ring-[#9b7bf7]/30"
+	                            />
                                 <div className="min-w-0 flex-1">
                                     <p className="text-[15px] text-[var(--text-primary)] font-semibold group-hover:text-[#c4b5fd] transition-colors truncate">
                                         {owner.display_name || owner.username}
@@ -1987,19 +1957,11 @@ function HandlePageInner({ path, initialData = null }) {
                                             href={`/${m.username}`}
                                             className="flex items-center gap-3 p-3 bg-[var(--card-bg)] border border-[var(--border-default)] rounded-xl hover:border-[var(--border-default)] transition-colors group"
                                         >
-                                            {m.avatar_url ? (
-                                                <img
-                                                    src={m.avatar_url}
-                                                    alt=""
-                                                    className="h-9 w-9 rounded-full object-cover"
-                                                />
-                                            ) : (
-                                                <div className="h-9 w-9 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center text-sm text-[var(--text-muted)] font-bold">
-                                                    {(m.display_name ||
-                                                        m.username ||
-                                                        "?")[0].toUpperCase()}
-                                                </div>
-                                            )}
+	                                        <img
+	                                            src={m.avatar_url || generatePixelAvatar(m.username || m.display_name)}
+	                                            alt=""
+	                                            className="h-9 w-9 rounded-full object-cover"
+	                                        />
                                             <div className="min-w-0 flex-1">
                                                 <p className="text-[14px] text-[var(--text-primary)] font-medium group-hover:text-[var(--text-primary)] transition-colors truncate">
                                                     {m.display_name ||

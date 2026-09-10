@@ -9,10 +9,11 @@ import { LIX_LOGO } from "./lixLogo";
 export const runtime = "edge";
 
 // GitHub-style social cards on a clean white background.
-//   type=profile → real logo + avatar + name + @handle + bio (users & orgs)
-//   type=blog    → real logo + blog banner + title + tagline + read time · authors
+//   type=profile    → real logo + avatar + name + @handle + bio (users & orgs)
+//   type=collection → collection name + owning publication + description
+//   type=blog       → real logo + blog banner + title + tagline + read time · authors
 //
-// Params: type, title, subtitle, sub, kind, avatar, cover, seed, readTime
+// Params: type, title, subtitle, sub, kind, avatar, cover, banner, seed, avatarSeed, readTime
 //   subtitle — bio (profile) or tagline (blog)
 //   sub      — @handle (profile) or author list (blog)
 //   kind     — small badge ("Author Profile", "Organisation", "Collection", …)
@@ -43,6 +44,7 @@ export async function GET(request) {
     const cover = ogSafeImage(searchParams.get("cover") || "");
     const banner = ogSafeImage(searchParams.get("banner") || "");
     const seed = (searchParams.get("seed") || title).slice(0, 160);
+    const avatarSeed = (searchParams.get("avatarSeed") || seed).slice(0, 160);
     const defaultCover = generateBlogBanner(seed);
     const hasAvatar = !!avatar;
     const hasCover = !!cover;
@@ -52,7 +54,7 @@ export async function GET(request) {
     // Profile banner: when a real avatar exists but no banner, tint the
     // generated banner palette to the avatar URL hash so they visually match.
     const defaultBanner = generateProfileBanner(seed, avatar || undefined);
-    const defaultAvatar = generatePixelAvatar(seed);
+    const defaultAvatar = generatePixelAvatar(avatarSeed);
 
     // Real LixBlogs logo, inlined as a data URI (see ./lixLogo). Inlining avoids a
     // request-time self-fetch, which is unreliable in the Cloudflare edge runtime
@@ -108,14 +110,163 @@ export async function GET(request) {
 
     const initial = (title || "L").replace("@", "").charAt(0).toUpperCase();
 
-    // ── Profile / org / collection — always banner + always avatar + name + handle + bio ──
-    if (type === "profile") {
-        // Banner: real URL when available, otherwise deterministic pixel-art.
+    // ── Collection — a distinct series card using the owning publication's media ──
+    if (type === "collection") {
         const bannerSrc = hasBanner ? banner : defaultBanner;
-        // Avatar: real URL when available, otherwise the pixel avatar.
         const avatarSrc = hasAvatar ? avatar : defaultAvatar;
-        // The pixel avatar is square — render it with rounded-square clip instead of
-        // a circle so its pixel-art style reads clearly at small sizes.
+        const avatarRadius = hasAvatar ? "50%" : "16px";
+
+        return new ImageResponse(
+            <div
+                style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    background: "#ffffff",
+                    fontFamily: "sans-serif",
+                    padding: "64px",
+                }}
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        width: "100%",
+                        height: "100%",
+                        border: `1px solid ${BORDER}`,
+                        borderRadius: "28px",
+                        overflow: "hidden",
+                    }}
+                >
+                    <div
+                        style={{
+                            position: "relative",
+                            display: "flex",
+                            width: "40%",
+                            height: "100%",
+                            overflow: "hidden",
+                            borderRight: `1px solid ${BORDER}`,
+                        }}
+                    >
+                        <img
+                            src={bannerSrc}
+                            width={430}
+                            height={500}
+                            style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "cover",
+                            }}
+                        />
+                        <div
+                            style={{
+                                position: "absolute",
+                                left: "40px",
+                                bottom: "40px",
+                                display: "flex",
+                                width: "120px",
+                                height: "120px",
+                                padding: "8px",
+                                borderRadius: avatarRadius,
+                                background: "#ffffff",
+                                border: `1px solid ${BORDER}`,
+                            }}
+                        >
+                            <img
+                                src={avatarSrc}
+                                width={102}
+                                height={102}
+                                style={{
+                                    width: "102px",
+                                    height: "102px",
+                                    borderRadius: avatarRadius,
+                                    objectFit: "cover",
+                                }}
+                            />
+                        </div>
+                    </div>
+                    <div
+                        style={{
+                            display: "flex",
+                            flex: 1,
+                            flexDirection: "column",
+                            justifyContent: "space-between",
+                            padding: "42px 52px",
+                        }}
+                    >
+                        <BrandSlot />
+                        <div
+                            style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                minWidth: 0,
+                            }}
+                        >
+                            <div
+                                style={{
+                                    display: "flex",
+                                    color: ACCENT,
+                                    fontSize: "21px",
+                                    fontWeight: 700,
+                                    letterSpacing: "1.5px",
+                                    textTransform: "uppercase",
+                                    marginBottom: "14px",
+                                }}
+                            >
+                                {kind || "Collection"}
+                            </div>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    color: INK,
+                                    fontSize: title.length > 28 ? "46px" : "56px",
+                                    fontWeight: 800,
+                                    lineHeight: 1.05,
+                                }}
+                            >
+                                {title}
+                            </div>
+                            {sub ? (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        color: MUTED,
+                                        fontSize: "25px",
+                                        fontWeight: 600,
+                                        marginTop: "14px",
+                                    }}
+                                >
+                                    by {sub}
+                                </div>
+                            ) : null}
+                            {subtitle ? (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        color: MUTED,
+                                        fontSize: "22px",
+                                        lineHeight: 1.4,
+                                        marginTop: "18px",
+                                    }}
+                                >
+                                    {subtitle}
+                                </div>
+                            ) : null}
+                        </div>
+                        <div style={{ display: "flex" }} />
+                    </div>
+                </div>
+            </div>,
+            { width: 1200, height: 630 },
+        );
+    }
+
+    // ── Profile / org — always banner + always avatar + name + handle + bio ──
+    if (type === "profile") {
+        // Banner: real URL when available, otherwise deterministic geometric art.
+        const bannerSrc = hasBanner ? banner : defaultBanner;
+        // Avatar: real URL when available, otherwise the geometric avatar.
+        const avatarSrc = hasAvatar ? avatar : defaultAvatar;
+        // The generated avatar is square — render it with a rounded-square clip.
         const avatarRadius = hasAvatar ? "50%" : "16px";
 
         return new ImageResponse(
