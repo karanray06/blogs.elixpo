@@ -38,6 +38,18 @@ function escapeExportHtml(value) {
     );
 }
 
+function versionLabel(label) {
+    return (
+        {
+            published: "Published",
+            autosave: "Editor save",
+            "cli-edit": "CLI edit",
+            "pre-restore": "Before restore",
+            "pre-cli-restore": "Before CLI restore",
+        }[label] || "Saved version"
+    );
+}
+
 function AvatarImg({ src, name, size = 32 }) {
     const [failed, setFailed] = useState(false);
     const initial = (name || "?")[0].toUpperCase();
@@ -1051,46 +1063,106 @@ export default function WritePage({ slugid }) {
     // Version history (#11 E)
     const [showHistory, setShowHistory] = useState(false);
     const [versions, setVersions] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyError, setHistoryError] = useState("");
+    const [historyActionId, setHistoryActionId] = useState("");
+    const [versionPreview, setVersionPreview] = useState(null);
     const historyRef = useRef(null);
     useEffect(() => {
-        if (!showHistory) return;
+        if (!showHistory && !versionPreview) return;
         const closeOnOutsideClick = (event) => {
             if (
+                showHistory &&
+                !versionPreview &&
                 historyRef.current &&
                 !historyRef.current.contains(event.target)
             ) {
                 setShowHistory(false);
             }
         };
+        const closeOnEscape = (event) => {
+            if (event.key !== "Escape") return;
+            if (versionPreview) setVersionPreview(null);
+            else setShowHistory(false);
+        };
         document.addEventListener("pointerdown", closeOnOutsideClick);
-        return () =>
+        document.addEventListener("keydown", closeOnEscape);
+        return () => {
             document.removeEventListener("pointerdown", closeOnOutsideClick);
-    }, [showHistory]);
+            document.removeEventListener("keydown", closeOnEscape);
+        };
+    }, [showHistory, versionPreview]);
 
     const openHistory = async () => {
         setShowHistory(true);
+        setHistoryLoading(true);
+        setHistoryError("");
         try {
             const r = await fetch(`/api/blogs/${blogId}/versions`);
-            if (r.ok) setVersions((await r.json()).versions || []);
-        } catch {}
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok)
+                throw new Error(data.error || "Version history is unavailable");
+            setVersions(data.versions || []);
+        } catch (error) {
+            setHistoryError(error.message || "Version history is unavailable");
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+    const previewVersion = async (version) => {
+        setHistoryActionId(version.id);
+        setHistoryError("");
+        try {
+            const r = await fetch(
+                `/api/blogs/${blogId}/versions?version=${encodeURIComponent(version.id)}`,
+            );
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok || !data.version)
+                throw new Error(data.error || "This version could not be loaded");
+            const editor = editorRef.current?.getEditor?.();
+            const versionMarkdown = editor
+                ? await editor.blocksToMarkdownLossy(data.version.content)
+                : JSON.stringify(data.version.content, null, 2);
+            setVersionPreview({ ...data.version, markdown: versionMarkdown });
+        } catch (error) {
+            setHistoryError(error.message || "This version could not be loaded");
+        } finally {
+            setHistoryActionId("");
+        }
     };
     const restoreVersion = async (versionId) => {
+        setHistoryActionId(versionId);
+        setHistoryError("");
         try {
             const r = await fetch(`/api/blogs/${blogId}/versions`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ versionId }),
             });
-            if (!r.ok) return;
-            const d = await r.json();
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok)
+                throw new Error(d.error || "This version could not be restored");
             const ed = editorRef.current?.getEditor?.();
             if (ed && Array.isArray(d.content)) {
-                try {
-                    ed.replaceBlocks(ed.document, d.content);
-                } catch {}
+                ed.replaceBlocks(ed.document, d.content);
+                draftDataRef.current = {
+                    ...draftDataRef.current,
+                    editorContent: d.content,
+                };
+                setEditorContent(d.content);
             }
+            dirtyRef.current = false;
+            setHasUnsavedEdits(false);
+            setLastKnownUpdatedAt(d.updatedAt);
+            setLastSaved(Date.now());
+            setVersionPreview(null);
             setShowHistory(false);
-        } catch {}
+            showClipboardToast("Version restored");
+        } catch (error) {
+            setHistoryError(error.message || "This version could not be restored");
+        } finally {
+            setHistoryActionId("");
+        }
     };
 
     // When another collaborator publishes, follow them to the published view
@@ -2988,7 +3060,7 @@ export default function WritePage({ slugid }) {
                         </button>
                         {showHistory && (
                             <div
-                                className="absolute right-0 top-10 z-50 w-72 max-h-[60vh] overflow-y-auto rounded-xl p-1.5"
+                                className="absolute right-0 top-10 z-50 w-[22rem] max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-y-auto rounded-xl p-1.5"
                                 style={{
                                     backgroundColor: "var(--bg-surface)",
                                     border: "1px solid var(--border-default)",
@@ -3001,33 +3073,46 @@ export default function WritePage({ slugid }) {
                                 >
                                     Version history
                                 </p>
-                                {versions.length === 0 ? (
+                                {historyLoading ? (
+                                    <div className="flex items-center gap-2 px-2.5 py-4 text-[12px] text-[var(--text-faint)]">
+                                        <span className="h-3.5 w-3.5 rounded-full border-2 border-[#9b7bf7]/25 border-t-[#9b7bf7] animate-spin" />
+                                        Loading saved versions…
+                                    </div>
+                                ) : historyError ? (
+                                    <div className="px-2.5 py-3">
+                                        <p className="text-[12px] text-red-400">
+                                            {historyError}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={openHistory}
+                                            className="mt-2 text-[11px] font-semibold text-[#9b7bf7]"
+                                        >
+                                            Try again
+                                        </button>
+                                    </div>
+                                ) : versions.length === 0 ? (
                                     <p
                                         className="text-[12px] px-2.5 py-3"
                                         style={{ color: "var(--text-faint)" }}
                                     >
-                                        No versions yet — they accrue as you
-                                        edit and publish.
+                                        No saved versions yet. A history entry
+                                        is created as you edit and publish.
                                     </p>
                                 ) : (
                                     versions.map((v) => (
                                         <div
                                             key={v.id}
-                                            className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg hover:bg-[var(--bg-active)]"
+                                            className="flex items-start justify-between gap-3 px-2.5 py-2.5 rounded-lg hover:bg-[var(--bg-active)]"
                                         >
                                             <div className="min-w-0">
                                                 <p
-                                                    className="text-[12px] truncate"
+                                                    className="text-[12px] font-medium truncate"
                                                     style={{
                                                         color: "var(--text-primary)",
                                                     }}
                                                 >
-                                                    {v.label === "published"
-                                                        ? "🚀 Published"
-                                                        : v.label ===
-                                                            "pre-restore"
-                                                          ? "↩ Pre-restore"
-                                                          : "💾 Autosave"}
+                                                    {versionLabel(v.label)}
                                                 </p>
                                                 <p
                                                     className="text-[11px] truncate"
@@ -3042,20 +3127,59 @@ export default function WritePage({ slugid }) {
                                                         ? ` · @${v.username}`
                                                         : ""}
                                                 </p>
+                                                <p
+                                                    className="mt-1 text-[11px] line-clamp-2 leading-relaxed"
+                                                    style={{
+                                                        color: "var(--text-muted)",
+                                                    }}
+                                                >
+                                                    {v.excerpt ||
+                                                        "Empty document"}
+                                                </p>
+                                                <p
+                                                    className="mt-1 text-[10px]"
+                                                    style={{
+                                                        color: "var(--text-faint)",
+                                                    }}
+                                                >
+                                                    {v.word_count || 0} words
+                                                </p>
                                             </div>
-                                            <button
-                                                onClick={() =>
-                                                    restoreVersion(v.id)
-                                                }
-                                                className="text-[11px] font-medium px-2 py-1 rounded-md flex-shrink-0"
-                                                style={{
-                                                    color: "#9b7bf7",
-                                                    backgroundColor:
-                                                        "rgba(155,123,247,0.1)",
-                                                }}
-                                            >
-                                                Restore
-                                            </button>
+                                            <div className="flex flex-col gap-1 flex-shrink-0">
+                                                <button
+                                                    type="button"
+                                                    disabled={
+                                                        historyActionId === v.id
+                                                    }
+                                                    onClick={() =>
+                                                        previewVersion(v)
+                                                    }
+                                                    className="text-[11px] font-medium px-2 py-1 rounded-md disabled:opacity-50"
+                                                    style={{
+                                                        color: "var(--text-secondary)",
+                                                        border: "1px solid var(--border-default)",
+                                                    }}
+                                                >
+                                                    Preview
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={
+                                                        historyActionId === v.id
+                                                    }
+                                                    onClick={() =>
+                                                        restoreVersion(v.id)
+                                                    }
+                                                    className="text-[11px] font-medium px-2 py-1 rounded-md disabled:opacity-50"
+                                                    style={{
+                                                        color: "#9b7bf7",
+                                                        backgroundColor:
+                                                            "rgba(155,123,247,0.1)",
+                                                    }}
+                                                >
+                                                    Restore
+                                                </button>
+                                            </div>
                                         </div>
                                     ))
                                 )}
@@ -5779,6 +5903,94 @@ export default function WritePage({ slugid }) {
                             <span className="text-[13px] font-medium text-[var(--text-primary)]">
                                 {clipboardToast.message}
                             </span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </ViewportPortal>
+
+            <ViewportPortal>
+                <AnimatePresence>
+                    {versionPreview && (
+                        <motion.div
+                            className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onPointerDown={(event) => {
+                                if (event.target === event.currentTarget)
+                                    setVersionPreview(null);
+                            }}
+                        >
+                            <motion.div
+                                role="dialog"
+                                aria-modal="true"
+                                aria-labelledby="version-preview-title"
+                                initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                                className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-2xl"
+                            >
+                                <div className="flex items-start justify-between gap-4 border-b border-[var(--border-default)] px-5 py-4">
+                                    <div className="min-w-0">
+                                        <h2
+                                            id="version-preview-title"
+                                            className="text-[15px] font-semibold text-[var(--text-primary)]"
+                                        >
+                                            {versionLabel(
+                                                versionPreview.label,
+                                            )}
+                                        </h2>
+                                        <p className="mt-1 text-[11px] text-[var(--text-faint)]">
+                                            {new Date(
+                                                versionPreview.created_at *
+                                                    1000,
+                                            ).toLocaleString()}
+                                            {versionPreview.username
+                                                ? ` · @${versionPreview.username}`
+                                                : ""}
+                                            {` · ${versionPreview.word_count || 0} words`}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setVersionPreview(null)
+                                        }
+                                        className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+                                        aria-label="Close version preview"
+                                    >
+                                        <ion-icon name="close-outline" />
+                                    </button>
+                                </div>
+                                <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words px-5 py-4 font-mono text-[12px] leading-relaxed text-[var(--text-secondary)]">
+                                    {versionPreview.markdown ||
+                                        "This version is empty."}
+                                </pre>
+                                <div className="flex items-center justify-end gap-2 border-t border-[var(--border-default)] px-5 py-3">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setVersionPreview(null)
+                                        }
+                                        className="rounded-lg border border-[var(--border-default)] px-3 py-2 text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={
+                                            historyActionId ===
+                                            versionPreview.id
+                                        }
+                                        onClick={() =>
+                                            restoreVersion(versionPreview.id)
+                                        }
+                                        className="rounded-lg bg-[#9b7bf7] px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-50"
+                                    >
+                                        Restore this version
+                                    </button>
+                                </div>
+                            </motion.div>
                         </motion.div>
                     )}
                 </AnimatePresence>

@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { BlogApiError } from '../src/api/BlogClient.js';
-import { blogCreate, blogDelete, blogEdit, blogPublish, enrichBlogMutationResult } from '../src/commands/blog/index.js';
+import { blogCreate, blogDelete, blogEdit, blogHistory, blogPublish, enrichBlogMutationResult } from '../src/commands/blog/index.js';
 import { blocksToMarkdown, markdownToBlocks } from '../src/content/markdown.js';
 import { validateBlogInput } from '../src/content/validate.js';
 
@@ -88,6 +88,23 @@ test('blog mutation results include the latest status and canonical URL', async 
 
   assert.equal(result.status, 'unlisted');
   assert.equal(result.url, 'https://blogs.elixpo.com/author/post');
+});
+
+test('history can inspect one retained version as Markdown', async () => {
+  const result = await blogHistory({
+    client: {
+      version: async (blogId, versionId) => ({
+        id: versionId,
+        blogId,
+        content: markdownToBlocks('Earlier **content**'),
+      }),
+    },
+    id: 'blog-1',
+    options: { version: 'version-1' },
+  });
+
+  assert.equal(result.id, 'version-1');
+  assert.equal(result.markdown, 'Earlier **content**');
 });
 
 test('permanent deletion retains the former URL and reports deleted status', async () => {
